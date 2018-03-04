@@ -1,0 +1,288 @@
+
+void OpenLibrary(Library *givenLib, bool testing)
+{
+    char *v[1],*t[1];
+    Library *lib;
+    Book *b;
+    unsigned start, time1, time2;
+    int cnt;
+    char *str;
+    bool hasBook;
+
+    books_Iterator *it=[[books_Iterator alloc] init];
+
+    start = GetTimeMillis();
+    time1 = start;
+    Log("Loading data...\n");
+
+    if(givenLib)lib=givenLib;
+    else {
+
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    //  Here you load all the data from disk, and return v[0] as the root.
+    //  For checking, t[0] is a text string with the name of the
+    //  class for the root object, but it is not needed in this program.
+    //
+       [Persist open: g_libFilename pgIncr: 0];
+       lib=(Library*)[Persist getRoot];
+ [Persist debugPrt: -2 label: "after loading data"]; // ???
+    //
+    // The DOL equivalent is:
+    // util.open(g_libFilename, 1, v, t); 
+    // if(util.error()!=0){
+    //            Log("Error while opening file %s.\n", g_libFilename);}
+    // lib = (Library*)v[0];
+    //
+    //  g_libFilename is the name of the file.
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    
+    }
+	time2 = GetTimeMillis();
+	Log("Done. Time: %d ms, Total: %d ms\n", time2-time1, time2-start);
+	AddResult(5, "Data loading [ms]", time2-time1);
+
+
+    if(testing)prtCheckSums(lib,"sums2.txt");
+    
+
+    time1 = GetTimeMillis();
+    const int topVoted = 5;
+    Log("Print top %d voted books...\n", topVoted);
+
+    cnt = 0;
+    for(b=[it fromHead: lib]; b; b=[it next])
+    {
+printf("??? top voted books b=%llu\n",(U)b); fflush(stdout);
+        if(cnt>=topVoted)
+        {
+            break;
+        }
+	Log("%d. book: %s\n", cnt+1, [bookTitle get: b]);
+        cnt++;
+    }
+    time2 = GetTimeMillis();
+	Log("Done. Time: %d ms, Total: %d ms\n", time2-time1, time2-start);
+	AddResult(6, "Top voted books [ms]", time2-time1);
+
+    
+    time1 = GetTimeMillis();
+    const char* find = "Z book";
+    Log("Number of books containing '%s' in their title...\n", find);
+    cnt = 0;
+    for(b=[it fromHead: lib]; b; b=[it next])
+    {
+printf("??? books checking title b=%llu\n",(U)b); fflush(stdout);
+	    if(strstr([bookTitle get: b], find)!=NULL)
+        {
+            cnt++;
+        }
+    }
+
+    Log("Number of books: %d\n", cnt);
+    time2 = GetTimeMillis();
+	Log("Done. Time: %d ms, Total: %d ms\n", time2-time1, time2-start);
+	AddResult(7, "Search book by title [ms]", time2-time1);
+
+
+    time1 = GetTimeMillis();
+    Log("\n\nRemove one quarter of the books\n");
+    booksToAuthors_Iterator *itBas=[[booksToAuthors_Iterator alloc] init];
+    booksToAuthors_Iterator *itBat=[[booksToAuthors_Iterator alloc] init];
+    BooksToAuthors *b2as, *b2at;
+    Author *a;
+
+ [Persist debugPrt: -2 label: "just before deleting"]; // ???
+ printf("??? lib=%llu\n",(U)lib); fflush(stdout);
+    cnt = 1;
+    for(b=[it fromHead: lib]; b; b=[it next])
+    {
+ printf("??? b=%llu\n",(U)b); fflush(stdout);
+        if((cnt%4)==0)
+        {
+ printf("??? removing b=%llu\n",(U)b); fflush(stdout);
+            //remove book
+	    [books remove: lib elem: b];
+            //remove books name
+	    str=[bookTitle remove: b];
+ printf("??? removing title=%llu\n",(U)str); fflush(stdout);
+	    [Persist pfree : str];
+
+            //remove abstract if any
+	    str = [bookAbstract remove: b];
+            if(str!=NULL)
+            {
+	        [Persist pfree : str];
+            }
+            //remove the relation Book-Author
+	    for(b2as=[itBas from1: b]; b2as; b2as=[itBas next1]){
+ printf("??? removing b2as=%llu\n",(U)b2as); fflush(stdout);
+		a = [booksToAuthors entity2: b2as];
+ printf("??? author a=%llu\n",(U)a); fflush(stdout);
+                //remove th relation
+		[booksToAuthors remove: b2as];
+                //if the author does not have any book, remove the author
+                hasBook = false;
+		for(b2at=[itBat from2: a]; b2at; b2at=[itBat next2]){
+ printf("??? removing b2at=%llu\n",(U)b2at); fflush(stdout);
+                    hasBook = true;
+                    break;
+                }
+                if(!hasBook){
+ printf("??? removing a=%llu\n",(U)a); fflush(stdout);
+                    //remove author
+			[authors remove: lib elem: a];
+                    //remove author's name
+			str=[authorName remove: a];
+	            [Persist pfree : str];
+	            [Persist pfree : a];
+                }
+	        [Persist pfree : b2as];
+            }
+	    [Persist pfree : b];
+ [Persist debugPrt: -2 label: "after deleting 1/4"]; // ???
+        }
+        cnt++;
+    }
+    [itBas release];
+    [itBat release];
+    [it release];
+
+    time2 = GetTimeMillis();
+	Log("Done. Time: %d ms, Total: %d ms\n", time2-time1, time2-start);
+	AddResult(8, "Data reduction [ms]", time2-time1);
+   
+
+    if(testing)prtCheckSums(lib,"sums3.txt");
+
+    //save reduced data
+    Log("Saving reduced data...\n");
+    time1 = GetTimeMillis();
+
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    //  Here you save all the data space, and remember 'lib' to be the root
+    //
+       [Persist setRoot: lib];
+       [Persist save: g_libFilename2 method: 'P']; 
+    //
+    //  g_libFilename2 is the name of the file, note 2 at the end
+    //  of the name.
+    // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+    time2 = GetTimeMillis();
+	Log("Done. Time: %d ms, Total: %d ms\n", time2-time1, time2-start);
+	AddResult(9, "Reduced data saving [ms]", time2-time1);
+        
+
+    unsigned size = FileSize(g_libFilename2);
+    AddResult(10, "Reduced file size [MB]", size / 1000000.);
+}
+
+void AddResult(int testNo, const char* name, double value)
+{
+    Result *res=[Result alloc];
+    res->next=NULL;
+    if(resultHead==NULL){
+        resultHead=res;
+    }
+    else {
+	resultTail->next=res;
+    }
+    resultTail=res;
+    
+    res->testNo = testNo;
+    strcpy(res->testName, name);
+    res->value = value;
+}
+
+void PrintResults()
+{
+    int unsigned i; Result *res;
+    printf("\nBENCHMARK RESULTS:\n\n");
+
+    printf("----------------------------------------------------------------------------\n");
+    printf("TestNo. | Test Name                                             | Value |\n");
+    printf("============================================================================\n");
+    for(res=resultHead; res; res=res->next){
+        printf("   %02d   | %-53s | %-8.2lf |\n", res->testNo, res->testName, res->value);
+	fflush(stdout);
+    }
+    printf("----------------------------------------------------------------------------\n");
+}
+
+void WriteResultsToFile(unsigned booksCount, const char *res_filename)
+{
+    unsigned i; Result *res;
+    setlocale(LC_ALL, "");
+    FILE *f = fopen(res_filename, "a");
+
+    //books_count
+    // testno; test_name; value
+    if(booksCount != 0)
+    {
+        fprintf(f, "\n%d;;;\n", booksCount); fflush(f);
+    }
+    for(res=resultHead; res; res=res->next){
+        char * end = ( res->next==NULL && booksCount!=0) ? "" : "\n";
+        fprintf(f, ";%d;%s;%.2lf%s", res->testNo, res->testName, res->value, end); fflush(f);
+    }
+    if(booksCount!=0)
+    {
+        fprintf(f, "\n"); fflush(f);
+    }
+    else
+    {
+        fprintf(f, "\n");
+        fprintf(f, "\n");
+        fprintf(f, "\n");
+        fprintf(f, "\n");
+    }
+    fclose(f);
+}
+
+time_t GetTimeMillis()
+{
+	struct timeval now;
+    gettimeofday(&now, NULL);
+    return (time_t)now.tv_sec*1000 + now.tv_usec/1000;
+}
+
+void Log(const char *msg, ...)
+{
+        va_list argptr;
+        va_start(argptr, msg);
+        vprintf(msg, argptr);
+        va_end(argptr);
+}
+
+int CompBooksByVote(const void *b1, const void *b2)
+{
+    Book *book1 = (Book*)b1;
+    Book *book2 = (Book*)b2;
+
+    return book2->vote - book1->vote;
+}
+
+size_t FileSize(const char* filename)
+{
+	struct stat stat_buf;
+	size_t size = 0;
+	int fh = open(filename, O_RDWR | O_BINARY, S_IREAD);
+	if(fh > 0)
+	{
+		int rc=stat(filename, &stat_buf);
+		size= rc==0 ? stat_buf.st_size : 0;
+	}
+	return size;
+}
+
+void Help()
+{
+    printf("Usage: main.exe [params]\n");
+    
+    printf("param: (required) either '-c' or '-o', where 'c' means 'create library' and 'o' means 'open library'\n");
+    printf("param: (required) '-b <books_count>': number of books to generate\n");
+    printf("param: (required) '-n <run_order>': order of the run of this program\n");
+    printf("param: (optional with -c) '-a': generate abstract for each book (random size, max. %d bytes)",NSIZE);
+} 
+
+#include "gen.m"
